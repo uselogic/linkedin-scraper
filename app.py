@@ -4,6 +4,11 @@ import os
 app = Flask(__name__, template_folder=".", static_folder=".")
 
 
+@app.route("/health")
+def health():
+    return "OK", 200
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

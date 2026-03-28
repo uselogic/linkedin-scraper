@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Story Scraper Web UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+    
+    <div class="container glass-panel">
+        <header>
+            <h1>Story Scraper <span>Interactive</span></h1>
+            <p>Browse tags, view headlines, and accurately scrape your favorite stories directly to your local machine.</p>
+        </header>
+
+        <main>
+            <section id="step-tags" class="step active">
+                <h2>1. Select a Tag</h2>
+                <div id="tags-loading" class="loading">Fetching tags from website...</div>
+                <div id="tags-container" class="grid-container hidden"></div>
+            </section>
+
+            <section id="step-headlines" class="step hidden">
+                <button class="back-btn" onclick="showTags()">← Back to Tags</button>
+                <h2>2. Select a Headline</h2>
+                <p id="current-tag-label" class="subtitle"></p>
+                <div id="headlines-loading" class="loading hidden">Fetching headlines...</div>
+                <div id="headlines-container" class="list-container hidden"></div>
+            </section>
+
+            <section id="step-success" class="step hidden">
+                <button class="back-btn" onclick="showHeadlines()">← Back to Headlines</button>
+                <div class="success-message">
+                    <div class="icon-check">✓</div>
+                    <h2>Story Scraped Successfully!</h2>
+                    <p id="saved-path-label"></p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        let currentTag = null;
+        let currentHeadlines = [];
+
+        const stepTags = document.getElementById('step-tags');
+        const stepHeadlines = document.getElementById('step-headlines');
+        const stepSuccess = document.getElementById('step-success');
+        
+        const tagsContainer = document.getElementById('tags-container');
+        const tagsLoading = document.getElementById('tags-loading');
+        
+        const headlinesContainer = document.getElementById('headlines-container');
+        const headlinesLoading = document.getElementById('headlines-loading');
+        const currentTagLabel = document.getElementById('current-tag-label');
+        
+        const savedPathLabel = document.getElementById('saved-path-label');
+
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchTags();
+        });
+
+        async function fetchTags() {
+            try {
+                const response = await fetch('/api/tags');
+                const data = await response.json();
+                
+                tagsLoading.classList.add('hidden');
+                tagsContainer.classList.remove('hidden');
+
+                if (data.success) {
+                    tagsContainer.innerHTML = '';
+                    data.tags.forEach(tag => {
+                        const btn = document.createElement('button');
+                        btn.className = 'tag-card';
+                        btn.textContent = tag.name;
+                        btn.onclick = () => selectTag(tag);
+                        tagsContainer.appendChild(btn);
+                    });
+                } else {
+                    tagsContainer.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                tagsLoading.textContent = `Failed to connect to backend.`;
+            }
+        }
+
+        async function selectTag(tag) {
+            currentTag = tag;
+            stepTags.classList.remove('active');
+            stepTags.classList.add('hidden');
+            
+            stepHeadlines.classList.remove('hidden');
+            stepHeadlines.classList.add('active');
+            
+            currentTagLabel.textContent = `Showing headlines for: ${tag.name}`;
+            
+            headlinesContainer.innerHTML = '';
+            headlinesContainer.classList.add('hidden');
+            headlinesLoading.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/headlines', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag_url: tag.url })
+                });
+                
+                const data = await response.json();
+                headlinesLoading.classList.add('hidden');
+                headlinesContainer.classList.remove('hidden');
+
+                if (data.success) {
+                    if (data.headlines.length === 0) {
+                        headlinesContainer.innerHTML = `<div class="info">No headlines found for this tag.</div>`;
+                        return;
+                    }
+                    data.headlines.forEach(hl => {
+                        const card = document.createElement('div');
+                        card.className = 'headline-card';
+                        
+                        const title = document.createElement('h3');
+                        title.textContent = hl.title;
+                        
+                        const btn = document.createElement('button');
+                        btn.className = 'scrape-btn';
+                        btn.textContent = 'Scrape Story';
+                        btn.onclick = (e) => {
+                            btn.textContent = 'Scraping...';
+                            btn.disabled = true;
+                            scrapeStory(hl, tag);
+                        };
+                        
+                        card.appendChild(title);
+                        card.appendChild(btn);
+                        headlinesContainer.appendChild(card);
+                    });
+                } else {
+                    headlinesContainer.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                }
+
+            } catch (error) {
+                headlinesLoading.textContent = `Failed to fetch headlines.`;
+            }
+        }
+
+        async function scrapeStory(headline, tag) {
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ story_url: headline.url, headline: headline.title })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    stepHeadlines.classList.remove('active');
+                    stepHeadlines.classList.add('hidden');
+                    
+                    stepSuccess.classList.remove('hidden');
+                    stepSuccess.classList.add('active');
+                    
+                    savedPathLabel.textContent = `Saved to: ${data.filepath}`;
+                } else {
+                    alert(`Error: ${data.error}`);
+                }
+            } catch (error) {
+                alert("Failed to scrape story.");
+            }
+        }
+
+        function showTags() {
+            stepHeadlines.classList.remove('active');
+            stepHeadlines.classList.add('hidden');
+            stepSuccess.classList.remove('active');
+            stepSuccess.classList.add('hidden');
+            
+            stepTags.classList.remove('hidden');
+            stepTags.classList.add('active');
+        }
+
+        function showHeadlines() {
+            stepSuccess.classList.remove('active');
+            stepSuccess.classList.add('hidden');
+            
+            stepHeadlines.classList.remove('hidden');
+            stepHeadlines.classList.add('active');
+            
+            const buttons = document.querySelectorAll('.scrape-btn');
+            buttons.forEach(btn => {
+                btn.textContent = 'Scrape Story';
+                btn.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>
